@@ -59,8 +59,10 @@ def get_client_secrets_path() -> Path:
 class AppConfig:
     canvas_url: str = ""
     canvas_token: str = ""
-    user_email: str = "student@university.edu"
-    user_name: str = "Student"
+    canvas_ical_url: str = ""
+    gcal_ical_url: str = ""
+    user_email: str = ""
+    user_name: str = ""
     active_profile: str = "Default"
     google_credentials_file: Optional[str] = None
     demo_mode: bool = False
@@ -68,19 +70,22 @@ class AppConfig:
 
     @property
     def is_canvas_configured(self) -> bool:
-        return bool(self.canvas_url and self.canvas_token)
+        return bool((self.canvas_url and self.canvas_token) or self.canvas_ical_url)
 
     @property
     def is_google_configured(self) -> bool:
-        return get_tokens_path().exists() or bool(self.google_credentials_file and Path(self.google_credentials_file).exists())
+        return bool(
+            get_tokens_path().exists()
+            or self.gcal_ical_url
+            or (self.google_credentials_file and Path(self.google_credentials_file).exists())
+        )
 
 
 def load_config() -> AppConfig:
-    """Load user configuration from disk, creating defaults if not present."""
+    """Load user configuration from disk, creating empty defaults if not present."""
     config_file = get_config_path()
     if not config_file.exists():
-        # Default config with demo mode active so users can experience the app immediately
-        config = AppConfig(demo_mode=True)
+        config = AppConfig()
         save_config(config)
         return config
 
@@ -90,16 +95,17 @@ def load_config() -> AppConfig:
             return AppConfig(
                 canvas_url=data.get("canvas_url", ""),
                 canvas_token=data.get("canvas_token", ""),
-                user_email=data.get("user_email", "student@university.edu"),
-                user_name=data.get("user_name", "Student"),
+                canvas_ical_url=data.get("canvas_ical_url", ""),
+                gcal_ical_url=data.get("gcal_ical_url", ""),
+                user_email=data.get("user_email", ""),
+                user_name=data.get("user_name", ""),
                 active_profile=data.get("active_profile", "Default"),
                 google_credentials_file=data.get("google_credentials_file"),
                 demo_mode=data.get("demo_mode", False),
                 custom_settings=data.get("custom_settings", {}),
             )
     except Exception:
-        # Fallback to defaults if corrupted
-        return AppConfig(demo_mode=True)
+        return AppConfig()
 
 
 def save_config(config: AppConfig) -> None:
@@ -108,5 +114,9 @@ def save_config(config: AppConfig) -> None:
     try:
         with open(config_file, "w", encoding="utf-8") as f:
             json.dump(asdict(config), f, indent=2)
+
+        # Update manifest
+        from jz_cli.tracker import record_manifest
+        record_manifest()
     except Exception as e:
         print(f"[Error saving config to {config_file}]: {e}")

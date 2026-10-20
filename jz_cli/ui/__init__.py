@@ -6,6 +6,7 @@ from jz_cli.ui.app import JZApp
 from jz_cli.ui.dashboard import (
     CanvasDueDatesWidget,
     ConfigWizardWidget,
+    ConnectWizardWidget,
     ExpandedCanvasWidget,
     HelpWidget,
     SplitDashboardWidget,

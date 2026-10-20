@@ -54,7 +54,7 @@ async def test_app_slash_commands():
         # Test /config
         app._handle_slash_command("/config")
         await pilot.pause()
-        assert app.current_view == "config"
+        assert app.current_view in ("config", "connect")
 
         # Test /help
         app._handle_slash_command("/help")
@@ -79,17 +79,29 @@ async def test_app_time_block_command():
 
 
 @pytest.mark.asyncio
-async def test_app_notice_dismiss_and_ask_mode():
+async def test_app_escape_and_ask_mode():
     cfg = AppConfig(demo_mode=True)
     app = JZApp(config=cfg)
 
     async with app.run_test() as pilot:
-        # Notice is visible initially
-        assert app.header_view.notice.visible_notice is True
+        # Switch to help then escape back to today
+        app._handle_slash_command("/help")
+        await pilot.pause()
+        assert app.current_view == "help"
+
         app.action_handle_escape()
         await pilot.pause()
-        # Notice should now be dismissed
-        assert app.header_view.notice.visible_notice is False
+        assert app.current_view == "today"
+
+        # Test /connect
+        app._handle_slash_command("/connect")
+        await pilot.pause()
+        assert app.current_view == "connect"
+
+        # Test /paths
+        app._handle_slash_command("/paths")
+        await pilot.pause()
+        assert "Tracked paths" in app.prompt_box.feedback.feedback_text
 
         # Test ask mode queries
         app._handle_ask_prompt("What is due today?")
@@ -97,4 +109,5 @@ async def test_app_notice_dismiss_and_ask_mode():
 
         app._handle_ask_prompt("When is my next class?")
         assert "Next event" in app.prompt_box.feedback.feedback_text or "No more classes" in app.prompt_box.feedback.feedback_text
+
 

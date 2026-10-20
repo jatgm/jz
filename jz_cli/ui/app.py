@@ -11,20 +11,19 @@ import datetime
 import re
 from typing import List, Optional
 
-from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, ScrollableContainer
+from textual.containers import Container
 from textual.reactive import reactive
-from textual.widgets import Input
 
 from jz_cli import __version__
 from jz_cli.config import AppConfig, load_config, save_config
 from jz_cli.services.calendar_service import CalendarEvent, CalendarService
 from jz_cli.services.canvas_service import CanvasAssignment, CanvasCourse, CanvasService
+from jz_cli.tracker import get_tracked_items
 from jz_cli.ui.dashboard import (
-    ConfigWizardWidget,
+    ConnectWizardWidget,
     ExpandedCanvasWidget,
     HelpWidget,
     SplitDashboardWidget,
@@ -36,7 +35,7 @@ from jz_cli.ui.prompt_input import FooterStatusBar, PromptBox
 
 
 class JZApp(App):
-    """Sleek developer-centric productivity terminal UI."""
+    """Clean developer-centric productivity terminal UI."""
 
     CSS = """
     Screen {
@@ -54,7 +53,7 @@ class JZApp(App):
     BINDINGS = [
         Binding("q", "quit_app", "Quit", show=False),
         Binding("ctrl+c", "quit_app", "Quit", show=False),
-        Binding("escape", "handle_escape", "Dismiss / Back", show=False),
+        Binding("escape", "handle_escape", "Back", show=False),
         Binding("shift+tab", "cycle_prompt_mode", "Cycle Mode", show=False),
         Binding("tab", "cycle_prompt_mode", "Cycle Mode", show=False),
         Binding("ctrl+r", "trigger_sync", "Sync", show=False),
@@ -69,7 +68,10 @@ class JZApp(App):
     def __init__(self, config: Optional[AppConfig] = None, **kwargs):
         super().__init__(**kwargs)
         self.config: AppConfig = config or load_config()
-        self.cal_service = CalendarService(demo_mode=self.config.demo_mode)
+        self.cal_service = CalendarService(
+            demo_mode=self.config.demo_mode,
+            gcal_ical_url=self.config.gcal_ical_url,
+        )
         self.canvas_service = CanvasService(self.config)
 
         self.today_events: List[CalendarEvent] = []
@@ -78,11 +80,17 @@ class JZApp(App):
         self.courses: List[CanvasCourse] = []
 
         self.header_view = HeaderView(config=self.config)
-        self.split_dashboard = SplitDashboardWidget([], [])
+        self.split_dashboard = SplitDashboardWidget(
+            [],
+            [],
+            is_gcal_connected=self.cal_service.is_connected,
+            is_canvas_connected=self.canvas_service.is_configured,
+            is_demo=self.config.demo_mode,
+        )
         self.canvas_view = ExpandedCanvasWidget()
         self.calendar_view = WeekCalendarWidget()
         self.planner_view = StudyPlannerWidget()
-        self.config_view = ConfigWizardWidget()
+        self.connect_view = ConnectWizardWidget()
         self.help_view = HelpWidget()
 
         self.prompt_box = PromptBox()
@@ -96,7 +104,6 @@ class JZApp(App):
         yield self.footer_bar
 
     async def on_mount(self) -> None:
-        """Initialize data on startup."""
         self.title = "jz CLI"
         self.prompt_box.focus_input()
         self.sync_data_worker()
@@ -104,7 +111,7 @@ class JZApp(App):
     @work(exclusive=True, thread=True)
     def sync_data_worker(self) -> None:
         """Fetch latest Calendar and Canvas data in background thread."""
-        self.call_from_thread(self._set_sync_state, "Syncing...", "Syncing...", "Syncing...")
+        self.call_from_thread(self._set_sync_state, "Syncing...")
 
         try:
             today_ev = self.cal_service.get_today_events()
@@ -118,16 +125,17 @@ class JZApp(App):
             self.assignments = assigns
             self.courses = courses
 
-            # Update widgets safely on main UI thread
             self.call_from_thread(self._update_all_widgets, today_ev, week_ev, assigns, courses, free_slots)
-            self.call_from_thread(self._set_sync_state, "Synced", "Synced", "Idle")
+            self.call_from_thread(self._set_sync_state, "Idle")
         except Exception as e:
-            self.call_from_thread(self._set_sync_state, "Error", "Error", f"Sync Failed: {e}")
+            self.call_from_thread(self._set_sync_state, f"Error: {e}")
 
-    def _set_sync_state(self, gcal: str, canvas: str, sys: str) -> None:
-        self.footer_bar.gcal_sync_status = gcal
-        self.footer_bar.canvas_sync_status = canvas
+    def _set_sync_state(self, sys: str) -> None:
         self.footer_bar.system_status = sys
+        self.footer_bar.gcal_connected = self.cal_service.is_connected
+        self.footer_bar.canvas_connected = self.canvas_service.is_configured
+        self.header_view.metadata.gcal_connected = self.cal_service.is_connected
+        self.header_view.metadata.canvas_connected = self.canvas_service.is_configured
 
     def _update_all_widgets(
         self,
@@ -137,20 +145,24 @@ class JZApp(App):
         courses: List[CanvasCourse],
         free_slots: list,
     ) -> None:
-        self.split_dashboard.update_data(today_ev, assigns)
+        self.split_dashboard.update_data(
+            today_ev,
+            assigns,
+            is_gcal_connected=self.cal_service.is_connected,
+            is_canvas_connected=self.canvas_service.is_configured,
+            is_demo=self.config.demo_mode,
+        )
         self.calendar_view.events = week_ev
         self.canvas_view.assignments = assigns
         self.canvas_view.courses = courses
         self.planner_view.assignments = assigns
         self.planner_view.free_slots = free_slots
 
-        # Update config view state
-        self.config_view.config = self.config
-        self.config_view.gcal_connected = self.cal_service.is_connected
-        self.config_view.canvas_connected = self.canvas_service.is_configured
+        self.connect_view.config = self.config
+        self.connect_view.gcal_connected = self.cal_service.is_connected
+        self.connect_view.canvas_connected = self.canvas_service.is_configured
 
     def switch_view(self, view_name: str) -> None:
-        """Switch central container widget."""
         main_content = self.query_one("#main-content", Container)
         main_content.remove_children()
 
@@ -162,8 +174,8 @@ class JZApp(App):
             main_content.mount(self.calendar_view)
         elif view_name == "plan":
             main_content.mount(self.planner_view)
-        elif view_name == "config":
-            main_content.mount(self.config_view)
+        elif view_name in ("connect", "config"):
+            main_content.mount(self.connect_view)
         elif view_name == "help":
             main_content.mount(self.help_view)
 
@@ -175,10 +187,6 @@ class JZApp(App):
         self.exit()
 
     def action_handle_escape(self) -> None:
-        # First dismiss notice banner if active
-        if self.header_view.dismiss_notice():
-            return
-        # If in another view, return to split dashboard
         if self.current_view != "today":
             self.switch_view("today")
             self.prompt_box.feedback.clear()
@@ -187,10 +195,10 @@ class JZApp(App):
 
     def action_cycle_prompt_mode(self) -> None:
         new_mode = self.prompt_box.cycle_mode()
-        self.notify(f"Mode switched to {new_mode}", title="jz Mode", timeout=1.5)
+        self.notify(f"Mode switched to {new_mode}", title="jz Mode", timeout=1.0)
 
     def action_trigger_sync(self) -> None:
-        self.prompt_box.feedback.show_message("⟳ Re-syncing Calendar and Canvas in background...", "bold cyan")
+        self.prompt_box.feedback.show_message("Re-syncing accounts...", "bold cyan")
         self.sync_data_worker()
 
     def action_show_help(self) -> None:
@@ -211,11 +219,9 @@ class JZApp(App):
         if not cmd_raw:
             return
 
-        # Check if slash command or natural language
         if cmd_raw.startswith("/"):
             self._handle_slash_command(cmd_raw)
         elif mode == "Command":
-            # Treat as slash command if user is in Command mode
             self._handle_slash_command(f"/{cmd_raw}")
         elif mode == "Plan":
             self._handle_plan_prompt(cmd_raw)
@@ -229,39 +235,55 @@ class JZApp(App):
 
         if cmd in ("/today", "/home"):
             self.switch_view("today")
-            self.prompt_box.feedback.show_message("✓ Switched to Today's Dashboard", "#00f0ff")
+            self.prompt_box.feedback.show_message("Today's Dashboard", "#00f0ff")
 
         elif cmd in ("/sync", "/refresh"):
             self.action_trigger_sync()
 
+        elif cmd in ("/connect", "/config"):
+            if args:
+                self._execute_connect_subcommand(args)
+            else:
+                self.switch_view("connect")
+                self.prompt_box.feedback.show_message("Connect live Google Calendar & Canvas accounts", "#00ff88")
+
         elif cmd in ("/canvas", "/assignments"):
             self.switch_view("canvas")
-            self.prompt_box.feedback.show_message(f"✓ Expanded Canvas view: {len(self.assignments)} assignments", "#ff79c6")
+            self.prompt_box.feedback.show_message(f"Canvas view: {len(self.assignments)} assignments", "#ff79c6")
 
         elif cmd in ("/cal", "/calendar", "/week"):
             self.switch_view("cal")
-            self.prompt_box.feedback.show_message(f"✓ 7-Day Calendar view: {len(self.week_events)} events", "#00f0ff")
+            self.prompt_box.feedback.show_message(f"7-Day Calendar: {len(self.week_events)} events", "#00f0ff")
 
         elif cmd == "/plan":
             self.switch_view("plan")
-            self.prompt_box.feedback.show_message("✓ Study Planner: Correlating free slots with Canvas deadlines", "#50fa7b")
-
-        elif cmd == "/config":
-            self.switch_view("config")
-            self.prompt_box.feedback.show_message("⚙️ Setup Wizard: Configure Canvas and Google OAuth credentials", "#f1fa8c")
+            self.prompt_box.feedback.show_message("Study Planner: Correlating free slots with Canvas deadlines", "#50fa7b")
 
         elif cmd.startswith("/block"):
             self._execute_time_block(args)
 
-        elif cmd == "/set-canvas":
-            self._execute_set_canvas(args)
+        elif cmd == "/demo":
+            self.config.demo_mode = not self.config.demo_mode
+            save_config(self.config)
+            self.cal_service.demo_mode = self.config.demo_mode
+            state = "Enabled" if self.config.demo_mode else "Disabled"
+            self.prompt_box.feedback.show_message(f"Demo Mode {state}", "bold yellow")
+            self.sync_data_worker()
 
-        elif cmd == "/set-email":
-            self._execute_set_email(args)
+        elif cmd in ("/paths", "/files"):
+            items = get_tracked_items()
+            paths_str = " | ".join(f"{it.name}: {it.path}" for it in items if it.exists)
+            self.prompt_box.feedback.show_message(f"Tracked paths: {paths_str}", "dim white")
+
+        elif cmd == "/uninstall":
+            self.prompt_box.feedback.show_message(
+                "To cleanly remove jz without a trace, exit and run: jz uninstall --yes",
+                "bold yellow",
+            )
 
         elif cmd in ("/help", "/?"):
             self.switch_view("help")
-            self.prompt_box.feedback.show_message("⚡ Showing Slash Commands & Shortcuts reference", "#50fa7b")
+            self.prompt_box.feedback.show_message("Commands & Shortcuts reference", "#50fa7b")
 
         elif cmd == "/clear":
             self.prompt_box.feedback.clear()
@@ -272,23 +294,88 @@ class JZApp(App):
 
         else:
             self.prompt_box.feedback.show_message(
-                f"Unknown command '{cmd}'. Type /help or ? to view available commands.",
+                f"Unknown command '{cmd}'. Type /help to view available commands.",
                 "bold red",
             )
 
+    def _execute_connect_subcommand(self, args: str) -> None:
+        """Handle `/connect canvas ...` or `/connect gcal ...`."""
+        parts = args.split(maxsplit=2)
+        target = parts[0].lower()
+
+        if target == "canvas":
+            if len(parts) < 2:
+                self.prompt_box.feedback.show_message(
+                    "Usage: /connect canvas <feed_url> OR /connect canvas <domain> <token>",
+                    "bold yellow",
+                )
+                return
+
+            if len(parts) == 2 and (".ics" in parts[1] or "feeds/calendars" in parts[1]):
+                feed_url = parts[1].strip()
+                self.config.canvas_ical_url = feed_url
+                self.config.demo_mode = False
+                save_config(self.config)
+                self.canvas_service.config = self.config
+                ok, msg, _ = self.canvas_service.test_connection()
+                style = "bold green" if ok else "bold yellow"
+                self.prompt_box.feedback.show_message(f"Canvas iCal: {msg}", style)
+                self.sync_data_worker()
+                return
+
+            if len(parts) >= 3:
+                domain, token = parts[1].strip(), parts[2].strip()
+                self.config.canvas_url = domain
+                self.config.canvas_token = token
+                self.config.demo_mode = False
+                save_config(self.config)
+                self.canvas_service.config = self.config
+                ok, msg, profile = self.canvas_service.test_connection()
+                if ok:
+                    if profile.get("primary_email"):
+                        self.config.user_email = profile["primary_email"]
+                        self.header_view.metadata.user_email = self.config.user_email
+                    if profile.get("name"):
+                        self.config.user_name = profile["name"]
+                    save_config(self.config)
+                    self.prompt_box.feedback.show_message(f"Connected: {msg}", "bold green")
+                    self.sync_data_worker()
+                else:
+                    self.prompt_box.feedback.show_message(f"Canvas Warning: {msg}", "bold yellow")
+                return
+
+            self.prompt_box.feedback.show_message(
+                "Usage: /connect canvas <domain> <token>", "bold yellow"
+            )
+
+        elif target in ("gcal", "calendar"):
+            if len(parts) < 2:
+                self.prompt_box.feedback.show_message(
+                    "Usage: /connect gcal <private_ical_url>", "bold yellow"
+                )
+                return
+            gcal_url = parts[1].strip()
+            self.config.gcal_ical_url = gcal_url
+            self.config.demo_mode = False
+            save_config(self.config)
+            self.cal_service.gcal_ical_url = gcal_url
+            self.prompt_box.feedback.show_message("Google Calendar linked via iCal feed!", "bold green")
+            self.sync_data_worker()
+
+        else:
+            self.prompt_box.feedback.show_message(
+                "Usage: /connect canvas <url/token> OR /connect gcal <url>", "bold yellow"
+            )
+
     def _execute_time_block(self, args: str) -> None:
-        """Parse `/block <duration> <title>` and schedule calendar block."""
         if not args:
             self.prompt_box.feedback.show_message(
-                "Usage: /block <duration> <title> (e.g. /block 2h CS 2110 HW or /block 45m Physics)",
-                "bold yellow",
+                "Usage: /block <duration> <title> (e.g. /block 2h CS 2110 HW)", "bold yellow"
             )
             return
 
-        # Parse duration (e.g., 2h, 1.5h, 90m, 45m)
         match = re.match(r"^(\d+(?:\.\d+)?)\s*([hmHM])?\s+(.+)$", args)
         if not match:
-            # Default to 60m with rest as title
             duration_mins = 60
             title = args
         else:
@@ -300,59 +387,15 @@ class JZApp(App):
         success, msg = self.cal_service.create_time_block(title, duration_mins)
         style = "bold #50fa7b" if success else "bold red"
         self.prompt_box.feedback.show_message(msg, style)
-
         if success:
-            # Refresh calendar
             self.sync_data_worker()
-
-    def _execute_set_canvas(self, args: str) -> None:
-        """Update Canvas URL and API token."""
-        parts = args.split(maxsplit=1)
-        if len(parts) < 2:
-            self.prompt_box.feedback.show_message(
-                "Usage: /set-canvas <canvas_domain_or_url> <access_token>",
-                "bold yellow",
-            )
-            return
-
-        url, token = parts[0], parts[1]
-        self.config.canvas_url = url
-        self.config.canvas_token = token
-        self.config.demo_mode = False
-        save_config(self.config)
-
-        # Test connection
-        self.canvas_service.config = self.config
-        ok, msg, profile = self.canvas_service.test_connection()
-        if ok:
-            if profile.get("primary_email"):
-                self.config.user_email = profile["primary_email"]
-            if profile.get("name"):
-                self.config.user_name = profile["name"]
-            save_config(self.config)
-            self.header_view.query_one("SessionMetadata").user_email = self.config.user_email
-            self.prompt_box.feedback.show_message(f"✓ Canvas Configured: {msg}", "bold green")
-            self.sync_data_worker()
-        else:
-            self.prompt_box.feedback.show_message(f"Canvas Warning: {msg}", "bold yellow")
-
-    def _execute_set_email(self, args: str) -> None:
-        email = args.strip()
-        if not email or "@" not in email:
-            self.prompt_box.feedback.show_message("Usage: /set-email <user@domain.edu>", "bold yellow")
-            return
-        self.config.user_email = email
-        save_config(self.config)
-        self.header_view.query_one("SessionMetadata").user_email = email
-        self.prompt_box.feedback.show_message(f"✓ Connected email set to: {email}", "bold green")
 
     def _handle_plan_prompt(self, prompt: str) -> None:
-        """Intelligent planner parsing for natural inputs in Plan mode."""
         lower = prompt.lower()
         if any(w in lower for w in ["study", "plan", "free", "schedule", "suggest"]):
             self.switch_view("plan")
             self.prompt_box.feedback.show_message(
-                "🎯 Generated study recommendations based on your free slots and upcoming Canvas deadlines.",
+                "Generated study recommendations based on your free slots and upcoming Canvas deadlines.",
                 "bold #50fa7b",
             )
         elif lower.startswith("block "):
@@ -360,12 +403,11 @@ class JZApp(App):
         else:
             self.switch_view("plan")
             self.prompt_box.feedback.show_message(
-                f"🎯 Plan Analysis for '{prompt}': Check suggested focus windows above.",
+                f"Plan Analysis for '{prompt}': Check suggested focus windows above.",
                 "bold #50fa7b",
             )
 
     def _handle_ask_prompt(self, prompt: str) -> None:
-        """Context-aware local intelligence answering student queries."""
         lower = prompt.lower()
         now = datetime.datetime.now().astimezone()
 
@@ -373,18 +415,18 @@ class JZApp(App):
             today_deadlines = [a for a in self.assignments if a.due_at and a.due_at.date() == now.date()]
             if today_deadlines:
                 items_str = ", ".join(f"[{a.course_code}] {a.name} ({a.points_possible:.0f} pts)" for a in today_deadlines)
-                self.prompt_box.feedback.show_message(f"⏰ Due today: {items_str}", "bold yellow")
+                self.prompt_box.feedback.show_message(f"Due today: {items_str}", "bold yellow")
             else:
-                self.prompt_box.feedback.show_message("🎉 No assignments due today! You're clear.", "bold green")
+                self.prompt_box.feedback.show_message("No assignments due today! You're clear.", "bold green")
 
         elif "due tomorrow" in lower:
             tomorrow_date = (now + datetime.timedelta(days=1)).date()
             tmrw = [a for a in self.assignments if a.due_at and a.due_at.date() == tomorrow_date]
             if tmrw:
                 items_str = ", ".join(f"[{a.course_code}] {a.name}" for a in tmrw)
-                self.prompt_box.feedback.show_message(f"📅 Due tomorrow: {items_str}", "bold cyan")
+                self.prompt_box.feedback.show_message(f"Due tomorrow: {items_str}", "bold cyan")
             else:
-                self.prompt_box.feedback.show_message("✓ Nothing due tomorrow.", "bold green")
+                self.prompt_box.feedback.show_message("Nothing due tomorrow.", "bold green")
 
         elif "next class" in lower or "next meeting" in lower or "next event" in lower:
             upcoming_today = [e for e in self.today_events if e.end_time > now and not e.is_all_day]
@@ -392,22 +434,22 @@ class JZApp(App):
                 nxt = upcoming_today[0]
                 badge = nxt.get_status_badge(now)[0]
                 self.prompt_box.feedback.show_message(
-                    f"📍 Next event: {nxt.title} at {nxt.start_time.strftime('%I:%M %p')} {badge} ({nxt.location or 'Online'})",
+                    f"Next event: {nxt.title} at {nxt.start_time.strftime('%I:%M %p')} {badge}",
                     "bold #00f0ff",
                 )
             else:
-                self.prompt_box.feedback.show_message("✓ No more classes or meetings remaining on today's calendar.", "bold green")
+                self.prompt_box.feedback.show_message("No more classes or meetings remaining on today's calendar.", "bold green")
 
         elif "free" in lower or "free time" in lower:
             free = self.cal_service.find_free_slots(days=1)
             if free:
                 slots_str = ", ".join(f"{s[0].strftime('%I:%M %p')}-{s[1].strftime('%I:%M %p')} ({s[2]}m)" for s in free[:3])
-                self.prompt_box.feedback.show_message(f"🕒 Free slots today: {slots_str}", "bold #50fa7b")
+                self.prompt_box.feedback.show_message(f"Free slots today: {slots_str}", "bold #50fa7b")
             else:
-                self.prompt_box.feedback.show_message("Your schedule is packed today! No major open slots.", "bold yellow")
+                self.prompt_box.feedback.show_message("Schedule is packed today. No open slots.", "bold yellow")
 
         else:
             self.prompt_box.feedback.show_message(
-                f"💬 [Assistant]: For '{prompt}', you have {len(self.today_events)} events today and {len(self.assignments)} pending assignments. Type /today or /plan to view details.",
+                f"Assistant: {len(self.today_events)} events today, {len(self.assignments)} pending assignments.",
                 "bright_white",
             )

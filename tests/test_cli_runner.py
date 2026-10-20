@@ -22,7 +22,7 @@ def test_cli_today():
 
 
 def test_cli_canvas():
-    result = runner.invoke(cli, ["canvas"])
+    result = runner.invoke(cli, ["canvas", "--demo"])
     assert result.exit_code == 0
     assert "Canvas LMS" in result.stdout
     assert "CS 2110" in result.stdout
@@ -44,3 +44,11 @@ def test_cli_config():
     result = runner.invoke(cli, ["config"])
     assert result.exit_code == 0
     assert "jz Configuration" in result.stdout
+
+
+def test_cli_paths():
+    result = runner.invoke(cli, ["paths"])
+    assert result.exit_code == 0
+    assert "Managed Files & Storage Inventory" in result.stdout
+    assert "Configuration Directory" in result.stdout
+

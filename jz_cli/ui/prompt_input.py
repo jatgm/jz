@@ -1,27 +1,24 @@
 """
-Interactive Prompt Box & Footer Status Bar for jz CLI:
-- Distinct neon-bordered outline box (Cursor / Claude Code style)
+Interactive Prompt Box & Clean Footer Status Bar for jz CLI:
+- Minimalist bordered prompt input box
 - Mode toggle indicator (◉ Plan / ◉ Command / ◉ Ask) with Shift+Tab cycling
 - Command history navigation (Up / Down arrows)
-- Sleek footer shortcuts & sync status bar
+- Clean, transparent footer bar without background highlights
 """
 
 from __future__ import annotations
 
 from typing import List, Optional
 
-from rich.align import Align
 from rich.console import RenderableType
-from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Input
-
 
 MODES = ["Plan", "Command", "Ask"]
 MODE_COLORS = {
@@ -31,8 +28,8 @@ MODE_COLORS = {
 }
 MODE_PLACEHOLDERS = {
     "Plan": "Plan mode: type /plan, /block 2h study, or ask for focus schedules...",
-    "Command": "Command mode: type /today, /canvas, /cal, /sync, /config, or /help...",
-    "Ask": "Ask mode: 'What is due tonight?', 'When is my next class?', 'Am I free at 2pm?'...",
+    "Command": "Command mode: type /today, /canvas, /cal, /connect, or /help...",
+    "Ask": "Ask mode: 'What is due today?', 'When is my next class?'...",
 }
 
 
@@ -42,8 +39,9 @@ class ModeIndicator(Widget):
     DEFAULT_CSS = """
     ModeIndicator {
         height: 1;
-        margin: 0 1 0 1;
+        margin: 0 1;
         padding: 0 1;
+        background: transparent;
     }
     """
 
@@ -65,9 +63,9 @@ class PromptFeedback(Widget):
     PromptFeedback {
         height: auto;
         max-height: 4;
-        margin: 0 1;
+        margin: 0 1 1 1;
         padding: 0 1;
-        background: #161b22;
+        background: #111827;
         border-left: wide #00ff88;
         display: none;
     }
@@ -92,11 +90,7 @@ class PromptFeedback(Widget):
 
 
 class CustomInput(Input):
-    """Input widget customized with history navigation and mode cycle forwarding."""
-
-    class ModeCycleRequested(Message):
-        """Message fired when Shift+Tab or Tab is pressed inside input."""
-        pass
+    """Input widget customized with history navigation."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -140,7 +134,7 @@ class CustomInput(Input):
 
 class PromptBox(Widget):
     """
-    Interactive prompt container with neon rounded border,
+    Interactive prompt container with clean border,
     dynamic placeholder, history, and mode indicator.
     """
 
@@ -148,13 +142,13 @@ class PromptBox(Widget):
     PromptBox {
         height: auto;
         dock: bottom;
-        background: #0d1117;
+        background: transparent;
         padding: 0 1;
     }
 
     #input-frame {
         border: round #00ff88;
-        background: #0d1117;
+        background: transparent;
         height: 3;
         margin: 0 1;
         padding: 0 1;
@@ -176,7 +170,6 @@ class PromptBox(Widget):
     current_mode = reactive("Plan")
 
     class CommandSubmitted(Message):
-        """Event emitted when a prompt command is submitted."""
         def __init__(self, command: str, mode: str) -> None:
             super().__init__()
             self.command = command
@@ -198,18 +191,15 @@ class PromptBox(Widget):
         yield self.mode_indicator
 
     def cycle_mode(self) -> str:
-        """Cycle between Plan -> Command -> Ask modes."""
         curr_idx = MODES.index(self.current_mode) if self.current_mode in MODES else 0
         next_idx = (curr_idx + 1) % len(MODES)
         self.current_mode = MODES[next_idx]
         self.mode_indicator.current_mode = self.current_mode
 
-        # Update input border and placeholder
         color = MODE_COLORS[self.current_mode]
         input_frame = self.query_one("#input-frame", Container)
         input_frame.styles.border = ("round", color)
         self.text_input.placeholder = MODE_PLACEHOLDERS[self.current_mode]
-
         return self.current_mode
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -226,56 +216,51 @@ class PromptBox(Widget):
 
 class FooterStatusBar(Widget):
     """
-    Bottom footer status bar with quick shortcuts hint on the left
-    and live sync status on the right.
+    Bottom footer status bar with clean, unhighlighted design and generous spacing.
     """
 
     DEFAULT_CSS = """
     FooterStatusBar {
         height: 1;
         dock: bottom;
-        background: #161b22;
+        background: transparent;
         color: #8b949e;
         padding: 0 2;
+        margin-top: 0;
     }
     """
 
-    gcal_sync_status = reactive("Synced")
-    canvas_sync_status = reactive("Synced")
+    gcal_connected = reactive(False)
+    canvas_connected = reactive(False)
     system_status = reactive("Idle")
 
     def render(self) -> RenderableType:
         table = Table.grid(expand=True)
-        table.add_column("shortcuts", justify="left")
-        table.add_column("sync_status", justify="right")
+        table.add_column("shortcuts", justify="left", ratio=1)
+        table.add_column("spacing", width=4)
+        table.add_column("sync_status", justify="right", ratio=1)
 
-        # Shortcuts hint
         shortcuts = Text.assemble(
             ("? ", "bold #50fa7b"),
-            ("help  ·  ", "dim white"),
+            ("help   ", "dim white"),
             ("/ ", "bold #00f0ff"),
-            ("commands  ·  ", "dim white"),
+            ("commands   ", "dim white"),
             ("@ ", "bold #bd93f9"),
-            ("context  ·  ", "dim white"),
-            ("! ", "bold #ffb86c"),
-            ("shell  ·  ", "dim white"),
+            ("context   ", "dim white"),
             ("q ", "bold #ff5555"),
             ("quit", "dim white"),
         )
 
-        # Sync status
-        gcal_col = "green" if self.gcal_sync_status == "Synced" else "yellow"
-        canvas_col = "green" if self.canvas_sync_status == "Synced" else "yellow"
-        sys_col = "cyan" if self.system_status == "Idle" else "bold yellow"
+        gcal_label = ("Google Cal: Connected ●", "bold green") if self.gcal_connected else ("Google Cal: Disconnected ○", "dim white")
+        canvas_label = ("Canvas: Connected ●", "bold cyan") if self.canvas_connected else ("Canvas: Disconnected ○", "dim white")
 
         sync_info = Text.assemble(
-            ("Google Cal: ", "dim white"),
-            (f"{self.gcal_sync_status} ● ", gcal_col),
-            (" ·  Canvas: ", "dim white"),
-            (f"{self.canvas_sync_status} ● ", canvas_col),
-            (" ·  Status: ", "dim white"),
-            (self.system_status, sys_col),
+            gcal_label,
+            ("    ", "dim white"),
+            canvas_label,
+            ("    Status: ", "dim white"),
+            (self.system_status, "bold cyan" if self.system_status == "Idle" else "yellow"),
         )
 
-        table.add_row(shortcuts, sync_info)
+        table.add_row(shortcuts, "", sync_info)
         return table
