@@ -1,48 +1,56 @@
-# `jz` — Terminal Productivity CLI
+# `jz` — Cross-Platform Terminal Productivity CLI
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![UI](https://img.shields.io/badge/TUI-Textual%20%2B%20Rich-brightgreen.svg)](https://textual.textualize.io/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > A sleek, minimalist terminal productivity application (Windows & macOS). Synchronize your live **Google Calendar** and **Canvas LMS** deadlines seamlessly inside your terminal with zero visual clutter.
 
 ---
 
 ```text
- ██╗███████╗  jz v0.1.0 · Academic & Dev Flow
+ ██╗███████╗  jz v0.1.0 · Terminal Productivity
  ██║  ███╔╝   alex.chen@gatech.edu [Default]
 ╚██║ ██████╗  Google Cal: Connected ●   Canvas: Connected ●
 ```
 
 ---
 
-## ✨ Features
+## 📑 Table of Contents
 
-- **Clean, Minimalist Terminal UI:**
-  - Compact 3-line ANSI logo and clean status indicators.
-  - Transparent layout with no distracting gray bars or clutter.
-  - Real, honest connection states: accurately indicates when services are connected or disconnected.
-- **Two-Column Dashboard:**
-  - **Today’s Agenda:** Google Calendar meetings and classes with relative time badges (`[Ongoing]`, `[In 15m]`, `[Done]`).
-  - **Canvas Due Dates:** Upcoming assignments, course codes (e.g., `[CS 2110]`), point totals, and countdowns (e.g., `Due tonight at 11:59 PM`, `Due in 2 days`).
-- **Interactive Prompt Box:**
-  - Bordered text input with cycleable modes (`Plan`, `Command`, `Ask`).
-  - Responsive text input with command history navigation (`Up` / `Down` arrows).
-- **Clean Footer Bar:**
-  - Quick shortcuts: `? help   / commands   @ context   q quit`.
-  - Transparent, uncluttered status indicators.
-- **Real Account Connections:**
-  - **Canvas LMS:** Connect via Canvas Personal Access Token or direct Canvas Calendar iCal URL (instant, 0-token setup).
-  - **Google Calendar:** Connect via private iCal URL or Google Cloud OAuth credentials.
-- **Zero-Trace Uninstallation:**
-  - Explicit file manifest tracking every file and directory created by `jz`.
-  - Clean `jz uninstall` command that purges all configuration, tokens, and caches without leaving a trace.
+- [Overview & Aesthetics](#-overview--aesthetics)
+- [Installation & Global Setup](#-installation--global-setup)
+- [Connecting Live Accounts](#-connecting-live-accounts)
+  - [Canvas LMS (iCal Feed or API Token)](#1-canvas-lms)
+  - [Google Calendar (iCal Feed or OAuth2)](#2-google-calendar)
+- [Terminal Layout & Modes](#-terminal-layout--modes)
+- [CLI Commands Reference](#-cli-commands-reference)
+- [Interactive Slash Commands](#-interactive-slash-commands)
+- [File Tracking & Zero-Trace Uninstall](#-file-tracking--zero-trace-uninstall)
+- [Project Architecture](#-project-architecture)
+- [Development & Testing](#-development--testing)
+- [License](#-license)
+
+---
+
+## 🎨 Overview & Aesthetics
+
+`jz` is engineered for students and developers who live in the terminal and want instant visibility into their academic commitments and deadlines without opening browser tabs:
+
+- **Distraction-Free Minimalist Design:** Transparent UI with crisp ANSI borders, zero background bars, and clean spacing.
+- **Dynamic Two-Column Dashboard:**
+  - **Today's Agenda:** Real-time Google Calendar schedule with status badges (`[Ongoing]`, `[In 15m]`, `[Done]`).
+  - **Canvas Due Dates:** Sorted assignment countdowns (`Due tonight at 11:59 PM`, `Tomorrow`, `In 2 days`) and point values.
+- **Intelligent Study Planner (`/plan`):** Analyzes free calendar gaps against impending submission deadlines to suggest dedicated study blocks.
+- **One-Command Time-Blocking (`/block`):** Schedule focus sessions into Google Calendar directly from the prompt: `/block 2h CS 2110 Midterm`.
+- **Honest Connection States:** Accurately reports `Connected ●` or `Disconnected ○`—no misleading mock data unless `--demo` mode is explicitly requested.
 
 ---
 
 ## 🚀 Installation & Global Setup
 
-### 1. Install Globally
+### 1. Clone & Install Globally
 
 ```bash
 git clone https://github.com/jatgm/jz.git
@@ -50,118 +58,145 @@ cd jz
 pip install -e .
 ```
 
-This registers the `jz` command globally on your system PATH:
+This registers the `jz` executable globally on your system PATH:
 - **Windows:** PowerShell and Command Prompt (`CMD`)
 - **macOS / Linux:** Zsh and Bash
 
-### 2. Launching
+### 2. Verify Installation
 
-Launch the interactive Terminal UI:
 ```bash
-jz
-```
-
-Or run fast non-interactive commands in your terminal:
-```bash
-# View today's schedule and deadlines directly in shell
-jz today
-
-# View upcoming Canvas assignments
-jz canvas
-
-# View 7-day Google Calendar schedule
-jz cal
-
-# Test integration connections
-jz sync
-
-# Check all tracked files and storage locations
-jz paths
+jz --version
+# Output: jz CLI v0.1.0
 ```
 
 ---
 
 ## ⚡ Connecting Live Accounts
 
-### 1. Canvas LMS (Two Methods)
+`jz` supports both **instant 0-token setup** (via private iCal feeds) and **full API token/OAuth authentication**.
 
-- **Method A: Canvas Calendar Feed (Easiest — 0 Token Required):**
-  1. Open Canvas in your browser -> go to **Calendar**.
-  2. Click **Calendar Feed** on the right sidebar and copy the `.ics` URL.
-  3. In your shell, run:
-     ```bash
-     jz connect canvas --url "https://<your-school>.instructure.com/feeds/calendars/user_XXXX.ics"
-     ```
-     Or inside the interactive prompt:
-     ```text
-     /connect canvas https://<your-school>.instructure.com/feeds/calendars/user_XXXX.ics
-     ```
+### 1. Canvas LMS
 
-- **Method B: Canvas API Access Token:**
-  1. Go to Canvas -> **Account** -> **Settings** -> **+ New Access Token**.
-  2. Run:
-     ```bash
-     jz connect canvas --url gatech.instructure.com --token <YOUR_TOKEN>
-     ```
+#### Method A: Calendar Feed (Recommended — 0 Token Required)
+Every Canvas user has an auto-updating private calendar feed with no token generation required:
+1. Open Canvas in your web browser.
+2. Click **Calendar** in the left sidebar.
+3. In the lower-right sidebar, click **Calendar Feed**.
+4. Copy the `.ics` URL (e.g., `https://<school>.instructure.com/feeds/calendars/user_XXXX.ics`).
+5. Link it in `jz`:
+   ```bash
+   jz connect canvas --url "https://<school>.instructure.com/feeds/calendars/user_XXXX.ics"
+   ```
+   Or inside the interactive prompt:
+   ```text
+   /connect canvas https://<school>.instructure.com/feeds/calendars/user_XXXX.ics
+   ```
+
+#### Method B: Personal Access Token
+For full course enrollment queries and detailed assignment metadata:
+1. In Canvas, go to **Account** -> **Settings**.
+2. Scroll to **Approved Integrations** and click **+ New Access Token**.
+3. Copy your generated token and run:
+   ```bash
+   jz connect canvas --url gatech.instructure.com --token <YOUR_TOKEN>
+   ```
+   Or inside the interactive prompt:
+   ```text
+   /connect canvas gatech.instructure.com <YOUR_TOKEN>
+   ```
+
+---
 
 ### 2. Google Calendar
 
-- **Private iCal URL (Instant Setup):**
-  1. Open Google Calendar in browser -> Settings for my calendars -> **Integrate Calendar**.
-  2. Copy **Secret address in iCal format**.
-  3. Run:
-     ```bash
-     jz connect gcal --url "https://calendar.google.com/calendar/ical/.../basic.ics"
-     ```
-     Or inside the interactive prompt:
-     ```text
-     /connect gcal https://calendar.google.com/calendar/ical/.../basic.ics
-     ```
+#### Method A: Private iCal Address (Instant — 0 GCP Project Required)
+1. Open [Google Calendar](https://calendar.google.com/) in your browser.
+2. In the left panel, hover over your calendar, click `...` -> **Settings and sharing**.
+3. Scroll down to **Integrate calendar** -> copy **Secret address in iCal format**.
+4. Link it in `jz`:
+   ```bash
+   jz connect gcal --url "https://calendar.google.com/calendar/ical/.../basic.ics"
+   ```
+   Or inside the interactive prompt:
+   ```text
+   /connect gcal https://calendar.google.com/calendar/ical/.../basic.ics
+   ```
+
+#### Method B: Google OAuth 2.0 Credentials
+1. Download your `credentials.json` from the [Google Cloud Console](https://console.cloud.google.com/) (Calendar API enabled).
+2. Place it in `%APPDATA%\jz\credentials.json` (Windows) or `~/.config/jz/credentials.json` (macOS/Linux).
+3. The app will automatically initiate a local browser loopback login and store OAuth tokens in `tokens.json`.
 
 ---
 
-## 📁 File Tracking & Clean Uninstallation
+## 🖥️ Terminal Layout & Modes
 
-`jz` strictly manages its storage and leaves 0 leftover files when uninstalled.
-
-### Inspect Tracked Files
-To see every file and directory `jz` manages on your system:
-```bash
-jz paths
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  ██╗███████╗  jz v0.1.0 · alex.chen@gatech.edu [Default]                   │
+│  ██║  ███╔╝   Google Cal: Connected ●   Canvas: Connected ●                │
+│ ╚██║ ██████╗  Type /connect to link accounts · /help for shortcuts          │
+├──────────────────────────────────────┬──────────────────────────────────────┤
+│ 📅 Today's Agenda (4 events)          │ 📚 Canvas Due Dates (5 upcoming)      │
+│ Time       Event Title       Status  │ Course    Assignment        Pts  Due │
+│ 09:30 AM   CS 2110 Lecture   [Done]  │ [CS 2110] HW 4 Memory Alloc 100  Tmr │
+│ 11:00 AM   MATH 3010 Linear  [Done]  │ [MATH]    Problem Set 5      50  2d  │
+│ 02:00 PM   Senior Capstone   [In 1h] │ [PHYS]    WebAssign 06       40  3d  │
+│ 04:30 PM   Office Hours      [In 3h] │ [CS 4400] Database Phase 2  150  5d  │
+├──────────────────────────────────────┴──────────────────────────────────────┤
+│ ┌─ Input ─────────────────────────────────────────────────────────────────┐ │
+│ │ [Plan] > type /plan, /block 2h study, or ask for focus schedules...     │ │
+│ └─────────────────────────────────────────────────────────────────────────┘ │
+│ ◉ Plan  (shift+tab to cycle modes: Plan · Command · Ask)                    │
+│                                                                             │
+│ ? help   / commands   @ context   q quit       Google: Connected ●  Canvas: Connected ● │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Managed locations:
-- **Windows:** `%APPDATA%\jz` (`config.json`, `tokens.json`, `manifest.json`, caches)
-- **macOS / Linux:** `~/.config/jz`
-
-### Clean Zero-Trace Uninstall
-To completely remove all configuration, tokens, and data from your computer:
-```bash
-# Removes all files and directories, prompts for confirmation
-jz uninstall
-
-# Non-interactive uninstall with full purge
-jz uninstall --yes
-```
+### Prompt Modes (Cycle with `Shift+Tab` or `Tab`)
+1. **◉ Plan Mode:** Default mode optimized for study scheduling. Type `/plan` to match calendar openings with deadlines, or `/block 2h CS 2110` to reserve calendar time.
+2. **◉ Command Mode:** Directly run slash commands (`/today`, `/canvas`, `/cal`, `/sync`, `/connect`).
+3. **◉ Ask Mode:** Natural language academic queries:
+   - *"What is due today?"* -> Lists today's submission deadlines.
+   - *"When is my next class?"* -> Highlights the next scheduled event.
+   - *"Am I free at 2pm?"* -> Evaluates calendar availability.
 
 ---
 
-## ⌨️ Interactive Slash Commands & Shortcuts
+## 💻 CLI Commands Reference
+
+`jz` works both as an interactive TUI and as a fast shell CLI for terminal scripts:
+
+| Command | Usage | Description |
+|---|---|---|
+| `jz` | `jz` | Launch full interactive Terminal UI |
+| `jz today` | `jz today [--demo]` | Quick terminal summary of today's schedule and deadlines |
+| `jz canvas` | `jz canvas [--demo]` | Print all upcoming Canvas assignments |
+| `jz cal` | `jz cal [--days 7]` | Print upcoming Google Calendar schedule |
+| `jz paths` | `jz paths` | Show all files and directories managed by `jz` |
+| `jz uninstall` | `jz uninstall [--yes]` | Complete zero-trace purge of all configuration and data |
+| `jz connect` | `jz connect [canvas\|gcal]` | Interactive connection wizard for live accounts |
+| `jz sync` | `jz sync` | Test API connections and refresh caches |
+| `jz config` | `jz config [--email ...]` | View or update local configuration settings |
+
+---
+
+## ⌨️ Interactive Slash Commands
 
 Inside the `jz` interactive prompt:
 
-| Command | Description |
+| Slash Command | Description |
 |---|---|
-| `/today` | Focus view on combined calendar events and Canvas deadlines for today |
-| `/connect` | Open the interactive live account connection wizard |
+| `/today` | Switch to today's split view (Agenda + Canvas deadlines) |
+| `/connect` | Open the interactive connection guide for Canvas & Google Calendar |
 | `/sync` | Trigger a fresh background re-sync of Calendar and Canvas data |
-| `/canvas` | Open an expanded view of all upcoming assignments grouped by course |
+| `/canvas` | Open an expanded table of all upcoming assignments grouped by course |
 | `/cal` | 7-day schedule view |
-| `/plan` | Scan free calendar slots against pending Canvas deadlines and suggest study blocks |
-| `/block <time> <title>` | Quick time-blocking (e.g. `/block 2h study for CS exam`) |
-| `/demo` | Toggle preview demo mode with sample academic data |
+| `/plan` | Scan free calendar slots against pending deadlines and suggest study blocks |
+| `/block <time> <title>` | Quick time-blocking (e.g., `/block 2h CS 2110 HW` or `/block 45m Physics`) |
+| `/demo` | Toggle preview demo mode on/off with realistic sample data |
 | `/paths` | List all tracked files and directories |
-| `/uninstall` | Instructions for clean removal |
+| `/uninstall` | Instructions and command for clean zero-trace removal |
 | `/help`, `?` | Open the interactive slash command reference sheet |
 | `/clear` | Clear prompt feedback and reset view |
 | `/quit`, `q` | Exit `jz` |
@@ -169,12 +204,102 @@ Inside the `jz` interactive prompt:
 ### Keybindings
 - **`Shift+Tab` / `Tab`**: Cycle prompt modes (`Plan` ➔ `Command` ➔ `Ask`)
 - **`Up` / `Down`**: Navigate command history in prompt
-- **`Esc`**: Return to default dashboard
+- **`Esc`**: Return to default dashboard view
 - **`Ctrl+R` / `F5`**: Quick sync
 - **`?`**: View command cheat sheet
 - **`q` / `Ctrl+C`**: Quit application
 
 ---
 
+## 📁 File Tracking & Zero-Trace Uninstall
+
+`jz` strictly tracks every file and directory it creates, ensuring a clean system footprint.
+
+### Inspect Tracked Storage
+To view every file managed by `jz`:
+```bash
+jz paths
+```
+
+Output:
+```text
+                    jz — Managed Files & Storage Inventory
+┌──────────────────────────┬──────────────┬──────────────┬────────────────────┐
+│ Item Name                │ Status       │         Size │ Path               │
+├──────────────────────────┼──────────────┼──────────────┼────────────────────┤
+│ Configuration Directory  │ Exists       │       1473 B │ %APPDATA%\jz       │
+│ Config File              │ Exists       │        232 B │ config.json        │
+│ OAuth Tokens             │ Not created  │            — │ tokens.json        │
+│ OAuth Credentials        │ Not created  │            — │ credentials.json   │
+│ Calendar Cache           │ Not created  │            — │ cache_calendar.json│
+│ Canvas Cache             │ Not created  │            — │ cache_canvas.json  │
+│ Manifest File            │ Exists       │       1241 B │ manifest.json      │
+└──────────────────────────┴──────────────┴──────────────┴────────────────────┘
+```
+
+Storage locations:
+- **Windows:** `%APPDATA%\jz\` (`C:\Users\<User>\AppData\Roaming\jz\`)
+- **macOS / Linux:** `~/.config/jz/` (or `$XDG_CONFIG_HOME/jz/`)
+
+### Zero-Trace Uninstallation
+To completely wipe all configuration, credentials, caches, and optionally remove the python package:
+```bash
+# Interactive uninstallation (prompts for confirmation)
+jz uninstall
+
+# Non-interactive complete purge
+jz uninstall --yes
+```
+
+---
+
+## 🏛️ Project Architecture
+
+```text
+jz/
+├── pyproject.toml              # Package metadata & global `jz` script entry point
+├── README.md                   # Full documentation & setup guides
+├── .gitignore                  # Git ignore rules for virtual environments & tokens
+├── tests/                      # Automated test suite (20 tests passed)
+│   ├── test_cli_runner.py      # CLI Typer command tests
+│   ├── test_config.py          # Path resolution & configuration tests
+│   ├── test_services.py        # Calendar & Canvas logic, badge & countdown tests
+│   ├── test_tracker.py         # File manifest & uninstallation tests
+│   └── test_tui.py             # Textual TUI lifecycle & slash command tests
+└── jz_cli/
+    ├── __init__.py             # Version metadata
+    ├── main.py                 # CLI entry point (Typer), subcommands & UTF-8 handler
+    ├── config.py               # Cross-platform config & token persistence
+    ├── tracker.py              # File tracking manifest & zero-trace uninstaller
+    ├── services/
+    │   ├── __init__.py
+    │   ├── calendar_service.py # Google Calendar API, private iCal parsing, free slots
+    │   └── canvas_service.py   # Canvas REST API, iCal feed parsing, countdown engine
+    └── ui/
+        ├── __init__.py
+        ├── app.py              # Textual App root & slash command dispatcher
+        ├── header.py           # Compact 3-line ANSI brand & session indicators
+        ├── dashboard.py        # Two-column dashboard, /canvas, /cal, /plan & /connect
+        └── prompt_input.py     # Bordered prompt input, mode switcher & transparent footer
+```
+
+---
+
+## 🧪 Development & Testing
+
+### Running the Test Suite
+The project includes a comprehensive automated test suite covering CLI invocation, TUI event loops, service parsing, and file tracking:
+
+```bash
+pytest -v
+```
+
+Output:
+```text
+============================= 20 passed in 1.08s ==============================
+```
+
+---
+
 ## 📜 License
-MIT License. Crafted for clean, distraction-free productivity.
+Distributed under the **MIT License**. Crafted for clean, distraction-free productivity.
