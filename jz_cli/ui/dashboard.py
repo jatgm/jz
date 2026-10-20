@@ -14,7 +14,7 @@ import datetime
 from typing import List, Optional
 
 from rich.align import Align
-from rich.console import RenderableType
+from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -386,7 +386,7 @@ class StudyPlannerWidget(Widget):
         )
 
         return Panel(
-            RenderableType(table),
+            Group(table, instructions),
             title="🎯 Intelligent Study & Deadline Block Engine",
             border_style="#50fa7b",
             padding=(1, 2),

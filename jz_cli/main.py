@@ -6,7 +6,18 @@ Routes commands, handles CLI flags, and launches interactive Textual TUI.
 from __future__ import annotations
 
 import datetime
+import sys
 from typing import Optional
+
+# Ensure UTF-8 output across Windows consoles
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 import typer
 from rich.console import Console
@@ -20,10 +31,10 @@ from jz_cli.services.calendar_service import CalendarService
 from jz_cli.services.canvas_service import CanvasService
 from jz_cli.ui.app import JZApp
 
-console = Console()
+console = Console(highlight=False)
 cli = typer.Typer(
     name="jz",
-    help="⚡ jz - Sleek developer-centric terminal productivity CLI for Google Calendar & Canvas LMS",
+    help="jz - Sleek developer-centric terminal productivity CLI for Google Calendar & Canvas LMS",
     invoke_without_command=True,
     no_args_is_help=False,
     add_completion=False,
